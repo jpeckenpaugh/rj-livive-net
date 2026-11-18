@@ -59,6 +59,7 @@
           <button id="start">Play</button>
           <button id="secretMode" class="secondary">Secret Mode</button>
           <button id="continueRun" class="hidden">Continue</button>
+          <button id="crashShop" class="secondary hidden">Shop</button>
           <button id="homeButton" class="secondary hidden">Home</button>
         </div>
       </section>
@@ -95,6 +96,7 @@
       const messageEl = document.getElementById('message');
       const startBtn = document.getElementById('start');
       const secretBtn = document.getElementById('secretMode');
+      const crashShopBtn = document.getElementById('crashShop');
       const continueBtn = document.getElementById('continueRun');
       const homeBtn = document.getElementById('homeButton');
       const tutorial = document.getElementById('tutorial');
@@ -107,6 +109,8 @@
       let w, h, dpr, last = 0, time = 0, distance = 0, speed = 270;
       const lanes = [0, 1, 2];
       const powers = {
+        life: { name: 'Extra Life', icon: '♥', color: '#ff8d9e', cost: extraLifeCost, duration: 0, detail: 'Automatically revives you after one crash' },
+        jet: { name: 'Jet Pack', icon: 'J', color: '#ff994e', cost: 25, duration: 8, detail: 'Fly above obstacles for 8 sec' },
         shield: { name: 'Shield', icon: 'S', color: '#7de4ec', cost: 12, duration: 0, detail: 'Blocks one crash' },
         magnet: { name: 'Coin Magnet', icon: 'M', color: '#ffc262', cost: 15, duration: 12, detail: 'Collects coins from all lanes for 12 sec' },
         double: { name: 'Double Points', icon: '2×', color: '#f6a0c9', cost: 15, duration: 12, detail: 'Doubles points earned for 12 sec' },
@@ -122,6 +126,7 @@
       let coins = 0;
       let savedWallet = null;
       try { coins = Math.max(0, Number(localStorage.getItem('rooftop-coins')) || 0); } catch {}
+      let reviveUntil = 0;
       let active = {}, pickups = [], coinIn, powerIn, points = 0, frame;
       const hasPower = key => active[key] > time;
       function activate(key) {
@@ -133,8 +138,14 @@
           try { localStorage.setItem('rooftop-coins', coins); } catch {}
         }
       }
+      let shopFrom;
       function renderShop() {
         shopBalance.textContent = `${coins} coins available`;
+        if (shopFrom === 'over') {
+          shopBalance.textContent += hasPower('life')
+            ? ' · Extra Life covers your continue'
+            : ` · Continue costs ${extraLifeCost} coins. Buying Extra Life covers it.`;
+        }
         shopItems.replaceChildren();
         for (const [key, power] of Object.entries(powers)) {
           const row = document.createElement('div');
@@ -143,12 +154,12 @@
           const name = document.createElement('strong');
           name.textContent = power.name;
           const detail = document.createElement('small');
-          detail.textContent = power.detail;
+          detail.textContent = shopFrom === 'over' && key === 'life' ? 'Use this to continue your run' : power.detail;
           info.append(name, detail);
           const buy = document.createElement('button');
           buy.textContent = `${power.cost} coins`;
           buy.setAttribute('aria-label', `Buy ${power.name} for ${power.cost} coins`);
-          buy.disabled = coins < power.cost || (key === 'shield' && hasPower(key));
+          buy.disabled = coins < power.cost || (!power.duration && hasPower(key));
           buy.onclick = () => {
             coins -= power.cost;
             activate(key);
@@ -161,7 +172,10 @@
         }
       }
       function toggleShop() {
-        if (state === 'playing') {
+        if (state === 'playing' || state === 'over') {
+          shopFrom = state;
+          closeShop.textContent = shopFrom === 'over' ? 'Back to Run Over' : 'Resume';
+          if (shopFrom === 'over') overlay.classList.add('hidden');
           crouchHeld = false;
           state = 'shopping';
           cancelAnimationFrame(frame);
@@ -170,13 +184,19 @@
           closeShop.focus();
         } else if (state === 'shopping') {
           shop.classList.add('hidden');
+          state = shopFrom;
+          if (state === 'over') {
+            updateRunOver();
+            overlay.classList.remove('hidden');
+            crashShopBtn.focus();
+            return;
+          }
           shopButton.focus();
-          state = 'playing';
           last = performance.now();
           frame = requestAnimationFrame(loop);
         }
       }
-      shopButton.onclick = closeShop.onclick = toggleShop;
+      shopButton.onclick = closeShop.onclick = crashShopBtn.onclick = toggleShop;
       updateWallet();
       let state = 'ready', player, obstacles = [], spawnIn = 1.1, clouds = [], buildings = [];
 
@@ -205,12 +225,14 @@
         obstacles = [];
         pickups = [];
         active = {};
+        reviveUntil = 0;
         spawnIn = .85 + Math.random() * .55;
         coinIn = .15 + Math.random() * .28;
         powerIn = 4 + Math.random() * 3;
         crouchHeld = false;
         crashObstacle = null;
         continueBtn.classList.add('hidden');
+        crashShopBtn.classList.add('hidden');
         homeBtn.classList.add('hidden');
         shopButton.hidden = false;
         secretBtn.classList.add('hidden');
@@ -310,11 +332,13 @@
         reset();
       };
       continueBtn.onclick = () => {
-        if (state !== 'over' || coins < extraLifeCost) return;
-        coins -= extraLifeCost;
+        if (state !== 'over' || (!hasPower('life') && coins < extraLifeCost)) return;
+        if (hasPower('life')) delete active.life;
+        else coins -= extraLifeCost;
         updateWallet();
         obstacles = obstacles.filter(obstacle => obstacle !== crashObstacle);
         crashObstacle = null;
+        reviveUntil = time + 1.5;
         overlay.classList.add('hidden');
         shopButton.hidden = false;
         state = 'playing';
@@ -339,6 +363,7 @@
         messageEl.textContent = 'Jump to higher roofs, duck under bars, and collect coins as you run.';
         startBtn.textContent = 'Play';
         continueBtn.classList.add('hidden');
+        crashShopBtn.classList.add('hidden');
         homeBtn.classList.add('hidden');
         draw();
         startBtn.focus();
@@ -395,11 +420,17 @@
         ctx.restore();
 
         const rows = 18;
-        const phase = (distance / 9) % 1;
+        const scroll = distance / 9;
+        const rowOffset = Math.floor(scroll);
+        const phase = scroll - rowOffset;
+        const palette = ['#20232b', '#272a32', '#2c3038'];
+        const depth = index => Math.max(0, Math.min(1, (index + phase) / rows)) ** 1.65;
         for (let row = -1; row < rows; row++) {
-          const depth = index => Math.max(0, Math.min(1, (index + phase) / rows)) ** 1.65;
           const a = far + (near - far) * depth(row);
           const b = far + (near - far) * depth(row + 1);
+          if (a === b) continue;
+          // Keep each row's color tied to its position on the course as it scrolls.
+          const courseRow = row - rowOffset;
           for (let col = 0; col < 8; col++) {
             const x = col / 4 - 1;
             const corners = [point(a, x), point(a, x + .25), point(b, x + .25), point(b, x)];
@@ -407,7 +438,8 @@
             ctx.moveTo(...corners[0]);
             corners.slice(1).forEach(corner => ctx.lineTo(...corner));
             ctx.closePath();
-            ctx.fillStyle = ['#20232b', '#272a32', '#2c3038'][(row + col * 2 + 3) % 3];
+            const colorIndex = (courseRow + col * 2) % palette.length;
+            ctx.fillStyle = palette[(colorIndex + palette.length) % palette.length];
             ctx.fill();
             ctx.strokeStyle = '#11151c';
             ctx.lineWidth = .65;
@@ -445,8 +477,13 @@
         for (const item of pickups) {
           const depth = (item.y - hy) / (gy - hy);
           const radius = (item.type === 'coin' ? 10 : 15) * (.32 + depth * .85);
-          const x = laneX(item.lane, item.y);
-          const y = roofY(item.lane, item.y) - radius * 1.4;
+          let x = laneX(item.lane, item.y);
+          let y = roofY(item.lane, item.y) - radius * 1.4;
+          if (player && item.type === 'coin' && hasPower('magnet')) {
+            const pull = Math.max(0, Math.min(1, (depth - .48) / .45));
+            x += (laneX(player.xLane, gy) - x) * pull;
+            y += (gy - player.elevation - 18 - y) * pull;
+          }
           const power = powers[item.type];
           ctx.beginPath();
           ctx.arc(x, y, radius, 0, Math.PI * 2);
@@ -466,6 +503,34 @@
           ctx.fillStyle='#263d49';ctx.globalAlpha=.2;ctx.beginPath();ctx.ellipse(laneX(player.lane, gy),shadowY-2,sz*.33*Math.max(.35,1-lift/180),sz*.11,0,0,Math.PI*2);ctx.fill();ctx.globalAlpha=1;
           const slide=isCrouching(), bob=lift?0:Math.sin(player.run*12)*3;
           ctx.save();ctx.translate(px,base+bob-sz*(slide?.11:.25)); if(slide)ctx.rotate(-.13);
+          if (hasPower('magnet')) {
+            ctx.beginPath();
+            ctx.ellipse(0, -sz * .3, sz * (.65 + .08 * Math.sin(time * 12)), sz * .62, 0, 0, Math.PI * 2);
+            ctx.strokeStyle = '#ffc55d';
+            ctx.lineWidth = 2;
+            ctx.setLineDash([5, 5]);
+            ctx.stroke();
+            ctx.setLineDash([]);
+          }
+          if (hasPower('jet')) {
+            for (const side of [-1, 1]) {
+              const x = side * sz * .24;
+              ctx.fillStyle = '#63788d';
+              ctx.fillRect(x - sz * .08, -sz * .49, sz * .16, sz * .38);
+              ctx.beginPath();
+              ctx.moveTo(x - sz * .075, -sz * .11);
+              ctx.lineTo(x + sz * .075, -sz * .11);
+              ctx.lineTo(x, sz * (.34 + .12 * Math.sin(time * 45 + side)));
+              ctx.fillStyle = '#ff9e44';
+              ctx.fill();
+            }
+          }
+          if (hasPower('life') || time < reviveUntil) {
+            ctx.fillStyle = '#ff8199';
+            ctx.font = `bold ${sz * (time < reviveUntil ? .57 : .3)}px system-ui`;
+            ctx.textAlign = 'center';
+            ctx.fillText('♥', 0, -sz);
+          }
           // legs
           ctx.strokeStyle='#263d56';ctx.lineWidth=sz*.15;ctx.lineCap='round';ctx.beginPath(); if(slide){ctx.moveTo(-sz*.06,-sz*.1);ctx.lineTo(sz*.36,sz*.05);ctx.moveTo(-sz*.06,-sz*.1);ctx.lineTo(sz*.18,sz*.13);}else{const stride = Math.sin(player.run * 16);
             for (const side of [-1, 1]) {
@@ -487,12 +552,17 @@
         shopButton.hidden = true;
         overlay.classList.remove('hidden');
         titleEl.innerHTML = 'Run<br>over';
-        messageEl.textContent = `Distance: ${Math.floor(distance)} m · Points: ${Math.floor(points)} · Coins: ${coins}`;
         startBtn.textContent = 'New run';
-        continueBtn.textContent = `Continue · ${extraLifeCost} coins`;
-        continueBtn.disabled = coins < extraLifeCost;
+        updateRunOver();
         continueBtn.classList.remove('hidden');
+        crashShopBtn.classList.remove('hidden');
         homeBtn.classList.remove('hidden');
+      }
+      function updateRunOver() {
+        messageEl.textContent = `Distance: ${Math.floor(distance)} m · Points: ${Math.floor(points)} · Coins: ${coins}`;
+        const useLife = hasPower('life');
+        continueBtn.textContent = useLife ? 'Continue · Use Extra Life' : `Continue · ${extraLifeCost} coins`;
+        continueBtn.disabled = !useLife && coins < extraLifeCost;
       }
       function addPickup(type) {
         const safeLanes = lanes.filter(lane => !obstacles.some(
@@ -524,6 +594,11 @@
         }
         if (player.elevation <= floor) {
           player.elevation = floor;
+          player.jumpV = 0;
+        }
+        if (hasPower('jet')) {
+          const flightHeight = Math.min(118, h * .23);
+          player.elevation = Math.max(player.elevation, floor + flightHeight);
           player.jumpV = 0;
         }
         player.jump = player.elevation - floor;
@@ -575,9 +650,15 @@
             (obstacle.type === 'bar'
               ? !isCrouching()
               : player.jump <= (obstacle.type === 'vent' ? 34 : 40));
-          if (hit && state === 'playing') {
+          if (hit && state === 'playing' && !hasPower('jet')) {
+            if (time < reviveUntil) return false;
             if (hasPower('shield')) {
               delete active.shield;
+              return false;
+            }
+            if (hasPower('life')) {
+              delete active.life;
+              reviveUntil = time + 1.5;
               return false;
             }
             endGame(obstacle);
@@ -587,7 +668,7 @@
 
         scoreEl.textContent = String(Math.floor(points)).padStart(5, '0');
         const label = Object.keys(powers).filter(hasPower).map(key =>
-          powers[key].name + (key === 'shield' ? '' : ` ${Math.ceil(active[key] - time)}s`)
+          powers[key].name + (!powers[key].duration ? '' : ` ${Math.ceil(active[key] - time)}s`)
         ).join(' · ');
         if (effects.textContent !== label) effects.textContent = label;
         clouds.forEach(cloud => {
