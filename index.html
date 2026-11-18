@@ -1,0 +1,605 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Rooftop Rush</title>
+  <style>
+    :root { color-scheme: dark; font-family: ui-rounded, "Trebuchet MS", system-ui, sans-serif; }
+    * { box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; background: #79c9ec; }
+    body { display: grid; place-items: center; }
+    #game { position: relative; width: min(100vw, 1200px); height: min(100vh, 760px); overflow: hidden; background: #86d4f0; box-shadow: 0 20px 80px #17324d66; }
+    canvas { display: block; width: 100%; height: 100%; }
+    .hud { position: absolute; inset: 0; pointer-events: none; color: #fff; text-shadow: 0 2px 5px #17446766; }
+    .brand { position: absolute; left: 25px; top: 20px; font-size: 13px; font-weight: 900; letter-spacing: .2em; text-transform: uppercase; opacity: .92; }
+    .scorebox { position: absolute; right: 24px; top: 17px; text-align: right; }
+    .score { font-size: 32px; font-weight: 900; line-height: 1; font-variant-numeric: tabular-nums; }
+    .score-label { margin-top: 5px; font-size: 10px; letter-spacing: .18em; font-weight: 800; opacity: .78; }
+    .hint { position: absolute; left: 50%; bottom: 17px; transform: translateX(-50%); padding: 8px 13px; border: 1px solid #ffffff55; border-radius: 99px; background: #17375245; font-size: 11px; font-weight: 700; white-space: nowrap; }
+    .overlay { position: absolute; inset: 0; display: grid; place-items: center; background: #16365735; pointer-events: auto; }
+    .panel { width: min(90%, 390px); padding: 30px 30px 26px; border: 1px solid #ffffff80; border-radius: 23px; background: #fff9ed; color: #17334b; text-align: center; box-shadow: 0 18px 60px #17334b50; }
+    .panel .eyebrow { color: #ef7756; font-size: 11px; font-weight: 900; letter-spacing: .2em; text-transform: uppercase; }
+    .panel h1 { margin: 8px 0 9px; font-size: clamp(32px, 7vw, 48px); line-height: .98; letter-spacing: -.055em; }
+    .panel p { margin: 0 auto 20px; max-width: 290px; color: #52677a; font-size: 14px; line-height: 1.55; }
+    button { border: 0; border-radius: 12px; padding: 13px 24px; color: #fff; background: #ef7756; font: inherit; font-weight: 900; cursor: pointer; box-shadow: 0 5px 0 #c5553e; }
+    button:hover { transform: translateY(-1px); filter: brightness(1.04); }
+    button:active { transform: translateY(3px); box-shadow: 0 2px 0 #c5553e; }
+    .wallet { position: absolute; top: 48px; left: 24px; pointer-events: auto; }
+    .wallet button, #closeShop { padding: 8px 13px; font-size: 12px; }
+    #effects { margin-top: 10px; font-size: 12px; font-weight: 800; }
+    .shop-panel { max-height: 96%; overflow: auto; }
+    .shop-row { display: grid; grid-template-columns: 1fr auto; gap: 3px 10px; align-items: center; text-align: left; padding: 8px 0; }
+    .shop-row small { display: block; color: #52677a; }
+    .shop-row button { padding: 7px 10px; font-size: 12px; }
+    button:disabled { opacity: .45; cursor: default; }
+    #closeShop { margin-top: 12px; }
+    .title-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 12px; }
+    .secondary { background: #47657a; box-shadow: 0 5px 0 #2e475a; }
+    #tutorial .panel { max-height: 96%; overflow: auto; }
+    .tutorial-list { text-align: left; padding-left: 20px; color: #364e60; font-size: 14px; line-height: 1.6; }
+    .hidden { display: none; }
+    @media (max-width: 600px) { .brand { left: 15px; top: 15px; font-size: 10px; } .scorebox { right: 15px; top: 15px; } .score { font-size: 25px; } .hint { bottom: 11px; font-size: 9px; } }
+  </style>
+</head>
+<body>
+  <main id="game" aria-label="Rooftop Rush game">
+    <canvas id="scene"></canvas>
+    <div class="hud">
+      <div class="brand">☀ Rooftop Rush</div>
+      <div class="scorebox"><div class="score" id="score">00000</div><div class="score-label">POINTS</div></div>
+      <div class="wallet"><button id="shopButton">Shop · 0 coins</button><div id="effects"></div></div>
+      <div class="hint">← → MOVE &nbsp;·&nbsp; ↑ / SPACE JUMP &nbsp;·&nbsp; ↓ CROUCH &nbsp;·&nbsp; P SHOP</div>
+    </div>
+    <div class="overlay" id="overlay">
+      <section class="panel">
+        <h1 id="title">Rooftop<br>Rush</h1>
+        <p id="message">Jump to higher roofs, duck under bars, and collect coins as you run.</p>
+        <div class="title-actions">
+          <button id="start">Play</button>
+          <button id="secretMode" class="secondary">Secret Mode</button>
+          <button id="continueRun" class="hidden">Continue</button>
+          <button id="homeButton" class="secondary hidden">Home</button>
+        </div>
+      </section>
+    </div>
+    <div class="overlay hidden" id="tutorial">
+      <section class="panel" aria-labelledby="tutorialTitle">
+        <h2 id="tutorialTitle">Your first rooftop run</h2>
+        <ul class="tutorial-list">
+          <li>Press ← or → to change roofs. Jump before moving to a higher roof.</li>
+          <li>Press ↑ or Space to jump over vents and gaps.</li>
+          <li>Hold ↓ to duck under overhead bars. On touch screens, swipe in the direction you want to move.</li>
+          <li>Collect coins and power-ups as you run. Press P to open the shop.</li>
+        </ul>
+        <button id="beginRun">Start running</button>
+      </section>
+    </div>
+    <div class="overlay hidden" id="shop">
+      <section class="panel shop-panel" aria-label="Power-up shop">
+        <h2>Power-up shop</h2>
+        <p id="shopBalance"></p>
+        <div id="shopItems"></div>
+        <button id="closeShop">Resume</button>
+      </section>
+    </div>
+  </main>
+  <script>
+    (() => {
+      const canvas = document.getElementById('scene');
+      const ctx = canvas.getContext('2d');
+      const game = document.getElementById('game');
+      const overlay = document.getElementById('overlay');
+      const scoreEl = document.getElementById('score');
+      const titleEl = document.getElementById('title');
+      const messageEl = document.getElementById('message');
+      const startBtn = document.getElementById('start');
+      const secretBtn = document.getElementById('secretMode');
+      const continueBtn = document.getElementById('continueRun');
+      const homeBtn = document.getElementById('homeButton');
+      const tutorial = document.getElementById('tutorial');
+      const beginBtn = document.getElementById('beginRun');
+      const extraLifeCost = 20;
+      let tutorialSeen = false;
+      let crouchHeld = false;
+      let crashObstacle;
+      try { tutorialSeen = localStorage.getItem('rooftop-tutorial') === 'seen'; } catch {}
+      let w, h, dpr, last = 0, time = 0, distance = 0, speed = 270;
+      const lanes = [0, 1, 2];
+      const powers = {
+        shield: { name: 'Shield', icon: 'S', color: '#7de4ec', cost: 12, duration: 0, detail: 'Blocks one crash' },
+        magnet: { name: 'Coin Magnet', icon: 'M', color: '#ffc262', cost: 15, duration: 12, detail: 'Collects coins from all lanes for 12 sec' },
+        double: { name: 'Double Points', icon: '2×', color: '#f6a0c9', cost: 15, duration: 12, detail: 'Doubles points earned for 12 sec' },
+        spring: { name: 'Super Jump', icon: '↑', color: '#9aeb8c', cost: 10, duration: 12, detail: 'Jump higher for 12 sec' },
+        slow: { name: 'Slow Motion', icon: '⏱', color: '#c2aeff', cost: 10, duration: 10, detail: 'Slows the rooftops for 10 sec' }
+      };
+      const shop = document.getElementById('shop');
+      const shopButton = document.getElementById('shopButton');
+      const shopBalance = document.getElementById('shopBalance');
+      const shopItems = document.getElementById('shopItems');
+      const closeShop = document.getElementById('closeShop');
+      const effects = document.getElementById('effects');
+      let coins = 0;
+      let savedWallet = null;
+      try { coins = Math.max(0, Number(localStorage.getItem('rooftop-coins')) || 0); } catch {}
+      let active = {}, pickups = [], coinIn, powerIn, points = 0, frame;
+      const hasPower = key => active[key] > time;
+      function activate(key) {
+        active[key] = powers[key].duration ? time + powers[key].duration : Infinity;
+      }
+      function updateWallet() {
+        shopButton.textContent = `Shop · ${coins} coins`;
+        if (savedWallet === null) {
+          try { localStorage.setItem('rooftop-coins', coins); } catch {}
+        }
+      }
+      function renderShop() {
+        shopBalance.textContent = `${coins} coins available`;
+        shopItems.replaceChildren();
+        for (const [key, power] of Object.entries(powers)) {
+          const row = document.createElement('div');
+          row.className = 'shop-row';
+          const info = document.createElement('div');
+          const name = document.createElement('strong');
+          name.textContent = power.name;
+          const detail = document.createElement('small');
+          detail.textContent = power.detail;
+          info.append(name, detail);
+          const buy = document.createElement('button');
+          buy.textContent = `${power.cost} coins`;
+          buy.setAttribute('aria-label', `Buy ${power.name} for ${power.cost} coins`);
+          buy.disabled = coins < power.cost || (key === 'shield' && hasPower(key));
+          buy.onclick = () => {
+            coins -= power.cost;
+            activate(key);
+            updateWallet();
+            renderShop();
+            closeShop.focus();
+          };
+          row.append(info, buy);
+          shopItems.append(row);
+        }
+      }
+      function toggleShop() {
+        if (state === 'playing') {
+          crouchHeld = false;
+          state = 'shopping';
+          cancelAnimationFrame(frame);
+          renderShop();
+          shop.classList.remove('hidden');
+          closeShop.focus();
+        } else if (state === 'shopping') {
+          shop.classList.add('hidden');
+          shopButton.focus();
+          state = 'playing';
+          last = performance.now();
+          frame = requestAnimationFrame(loop);
+        }
+      }
+      shopButton.onclick = closeShop.onclick = toggleShop;
+      updateWallet();
+      let state = 'ready', player, obstacles = [], spawnIn = 1.1, clouds = [], buildings = [];
+
+      function resize() {
+        const r = game.getBoundingClientRect(); dpr = Math.min(devicePixelRatio || 1, 2);
+        const previousFloor = player ? roofHeight(player.lane) : 0;
+        const previousHeight = h;
+        w = r.width; h = r.height;
+        if (player) player.elevation += roofHeight(player.lane) - previousFloor;
+        if (previousHeight) {
+          for (const item of [...obstacles, ...pickups]) item.y *= h / previousHeight;
+        }
+        canvas.width = w * dpr; canvas.height = h * dpr;
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        makeScenery(); draw();
+      }
+      function makeScenery() {
+        clouds = Array.from({length: 8}, (_, i) => ({x: (i / 7) * (w + 180) - 80, y: h * (.11 + ((i * 37) % 17) / 100), s: .65 + (i * 13 % 50) / 100}));
+        buildings = Array.from({length: 11}, (_, i) => ({x: i * (w / 8) - 40, width: 65 + (i * 19 % 55), height: h * (.16 + (i * 29 % 24) / 100), color: ['#a97574','#946064','#b78779','#85555c'][i%4]}));
+      }
+      function reset() {
+        distance = time = points = 0;
+        scoreEl.textContent = '00000';
+        effects.textContent = '';
+        speed = 270;
+        obstacles = [];
+        pickups = [];
+        active = {};
+        spawnIn = .85 + Math.random() * .55;
+        coinIn = .15 + Math.random() * .28;
+        powerIn = 4 + Math.random() * 3;
+        crouchHeld = false;
+        crashObstacle = null;
+        continueBtn.classList.add('hidden');
+        homeBtn.classList.add('hidden');
+        shopButton.hidden = false;
+        secretBtn.classList.add('hidden');
+        if (savedWallet !== null) {
+          coins = 500;
+          updateWallet();
+          for (const key of Object.keys(powers)) activate(key);
+        }
+        player = {lane: 1, xLane: 1, elevation: roofHeight(1), jump: 0, jumpV: 0, slide: 0, run: 0};
+        state = 'playing'; overlay.classList.add('hidden'); last = performance.now(); frame = requestAnimationFrame(loop);
+      }
+      function laneX(lane, y) {
+        const horizon = h * .47, roofY = h * .79;
+        const p = Math.max(0, Math.min(1, (y - horizon) / (roofY - horizon)));
+        const spread = w * (.085 + p * .34);
+        return w / 2 + (lane - 1) * spread;
+      }
+      function groundY() { return h * .775; }
+      function roofHeight(lane) {
+        const wave = Math.sin(time * .53 + (lane - 1) * 1.85);
+        return (45 + 44 * wave) * Math.min(1, h / 520);
+      }
+      function roofY(lane, y) {
+        const depth = Math.max(0, (y - h * .47) / (groundY() - h * .47));
+        return y - roofHeight(lane) * (.23 + .77 * depth);
+      }
+      function changeLane(direction) {
+        const target = Math.max(0, Math.min(2, player.lane + direction));
+        if (target !== player.lane && player.elevation >= roofHeight(target)) {
+          player.lane = target;
+        }
+      }
+      function spawnObstacle() {
+        const lane = Math.floor(Math.random() * 3);
+        const types = ['vent', 'gap', 'bar'];
+        const type = types[Math.floor(Math.random() * types.length)];
+        obstacles.push({ lane, y: h * .47, type });
+      }
+      function action(key) {
+        if (state !== 'playing') return;
+        if (key === 'ArrowLeft' || key === 'a') changeLane(-1);
+        if (key === 'ArrowRight' || key === 'd') changeLane(1);
+        if (key === 'ArrowUp' || key === ' ' || key === 'w') { if (player.elevation === roofHeight(player.lane) && player.slide <= 0 && !crouchHeld) player.jumpV = hasPower('spring') ? 760 : 570; }
+        if (key === 'ArrowDown' || key === 's') { if (player.elevation === roofHeight(player.lane)) player.slide = .65; }
+      }
+      addEventListener('keydown', event => {
+        const key = event.key.toLowerCase();
+        if (!event.repeat && (key === 'p' || (key === 'escape' && state === 'shopping'))) {
+          toggleShop();
+          return;
+        }
+        if (key === 'enter' && (state === 'ready' || state === 'over')) {
+          event.preventDefault();
+          startRun();
+          return;
+        }
+        if (state !== 'playing') return;
+        if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', ' '].includes(event.key)) {
+          event.preventDefault();
+        }
+        if (key === 'arrowdown' || key === 's') {
+          crouchHeld = true;
+          return;
+        }
+        action(event.key.length === 1 ? key : event.key);
+      });
+      addEventListener('keyup', event => {
+        if (['arrowdown', 's'].includes(event.key.toLowerCase())) crouchHeld = false;
+      });
+      addEventListener('blur', () => { crouchHeld = false; });
+      function isCrouching() {
+        return player.jump < 1 && (crouchHeld || player.slide > 0);
+      }
+      let touchX = null, touchY = null;
+      canvas.addEventListener('touchstart', e => { touchX = e.changedTouches[0].clientX; touchY = e.changedTouches[0].clientY; }, {passive:true});
+      canvas.addEventListener('touchend', e => { if (touchX == null) return; const dx=e.changedTouches[0].clientX-touchX, dy=e.changedTouches[0].clientY-touchY; if(Math.abs(dx)>Math.abs(dy)) action(dx<0?'ArrowLeft':'ArrowRight'); else action(dy<0?'ArrowUp':'ArrowDown'); touchX=touchY=null; }, {passive:true});
+      function startRun() {
+        if (state === 'ready' && !tutorialSeen) {
+          state = 'tutorial';
+          overlay.classList.add('hidden');
+          tutorial.classList.remove('hidden');
+          beginBtn.focus();
+          return;
+        }
+        reset();
+      }
+      startBtn.onclick = startRun;
+      secretBtn.onclick = () => {
+        if (state !== 'ready') return;
+        savedWallet = coins;
+        reset();
+      };
+      beginBtn.onclick = () => {
+        tutorialSeen = true;
+        try { localStorage.setItem('rooftop-tutorial', 'seen'); } catch {}
+        tutorial.classList.add('hidden');
+        reset();
+      };
+      continueBtn.onclick = () => {
+        if (state !== 'over' || coins < extraLifeCost) return;
+        coins -= extraLifeCost;
+        updateWallet();
+        obstacles = obstacles.filter(obstacle => obstacle !== crashObstacle);
+        crashObstacle = null;
+        overlay.classList.add('hidden');
+        shopButton.hidden = false;
+        state = 'playing';
+        last = performance.now();
+        frame = requestAnimationFrame(loop);
+      };
+      homeBtn.onclick = () => {
+        if (savedWallet !== null) {
+          coins = savedWallet;
+          savedWallet = null;
+          updateWallet();
+        }
+        secretBtn.classList.remove('hidden');
+        state = 'ready';
+        player = null;
+        obstacles = [];
+        pickups = [];
+        time = distance = points = 0;
+        effects.textContent = '';
+        scoreEl.textContent = '00000';
+        titleEl.innerHTML = 'Rooftop<br>Rush';
+        messageEl.textContent = 'Jump to higher roofs, duck under bars, and collect coins as you run.';
+        startBtn.textContent = 'Play';
+        continueBtn.classList.add('hidden');
+        homeBtn.classList.add('hidden');
+        draw();
+        startBtn.focus();
+      };
+
+      function drawCloud(c) {
+        const x = c.x, y = c.y, s = c.s;
+        ctx.fillStyle = '#fffdf4'; ctx.beginPath();
+        ctx.ellipse(x, y, 30*s, 12*s, 0, 0, Math.PI*2); ctx.ellipse(x-19*s,y-5*s,17*s,13*s,0,0,Math.PI*2); ctx.ellipse(x+1*s,y-12*s,21*s,17*s,0,0,Math.PI*2); ctx.ellipse(x+22*s,y-4*s,17*s,12*s,0,0,Math.PI*2); ctx.fill();
+      }
+      function drawRoof(lane) {
+        const far = h * .47;
+        const near = h * .87;
+        const point = (y, across) => {
+          const depth = Math.min(1, (y - far) / (groundY() - far));
+          return [laneX(lane, y) + across * w * (.037 + .153 * depth), roofY(lane, y)];
+        };
+        const [left, edge] = point(near, -1);
+        const [right] = point(near, 1);
+
+        const brick = ctx.createLinearGradient(left, edge, right, edge + h * .2);
+        brick.addColorStop(0, '#b74e41');
+        brick.addColorStop(1, '#742d33');
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(left, edge, right - left, h - edge);
+        ctx.clip();
+        ctx.fillStyle = brick;
+        ctx.fillRect(left, edge, right - left, h - edge);
+        for (let row = 0; edge + row * 12 < h; row++) {
+          const y = edge + row * 12;
+          ctx.fillStyle = '#51202b55';
+          ctx.fillRect(left, y, right - left, 1);
+          for (let x = left - (row % 2) * 15; x < right; x += 30) {
+            ctx.fillRect(x, y, 1, 12);
+          }
+        }
+        for (let y = edge + 19; y < h; y += 62) {
+          for (let col = 1; col <= 4; col++) {
+            const width = Math.min(32, (right - left) * .12);
+            const x = left + (right - left) * col / 5 - width / 2;
+            ctx.fillStyle = '#532530';
+            ctx.fillRect(x - 3, y - 3, width + 6, 40);
+            ctx.fillStyle = '#283546';
+            ctx.fillRect(x, y, width, 34);
+            ctx.fillStyle = '#9dcbd2';
+            ctx.fillRect(x + 2, y + 2, width - 4, 15);
+            ctx.fillStyle = '#58778b';
+            ctx.fillRect(x + 2, y + 19, width - 4, 13);
+            ctx.fillStyle = '#df9a77';
+            ctx.fillRect(x - 4, y + 34, width + 8, 3);
+          }
+        }
+        ctx.restore();
+
+        const rows = 18;
+        const phase = (distance / 9) % 1;
+        for (let row = -1; row < rows; row++) {
+          const depth = index => Math.max(0, Math.min(1, (index + phase) / rows)) ** 1.65;
+          const a = far + (near - far) * depth(row);
+          const b = far + (near - far) * depth(row + 1);
+          for (let col = 0; col < 8; col++) {
+            const x = col / 4 - 1;
+            const corners = [point(a, x), point(a, x + .25), point(b, x + .25), point(b, x)];
+            ctx.beginPath();
+            ctx.moveTo(...corners[0]);
+            corners.slice(1).forEach(corner => ctx.lineTo(...corner));
+            ctx.closePath();
+            ctx.fillStyle = ['#20232b', '#272a32', '#2c3038'][(row + col * 2 + 3) % 3];
+            ctx.fill();
+            ctx.strokeStyle = '#11151c';
+            ctx.lineWidth = .65;
+            ctx.stroke();
+          }
+        }
+        ctx.fillStyle = '#151820';
+        ctx.fillRect(left, edge, right - left, 6);
+      }
+      function draw() {
+        ctx.clearRect(0,0,w,h);
+        const sky = ctx.createLinearGradient(0,0,0,h); sky.addColorStop(0,'#74c5e9'); sky.addColorStop(.67,'#d5eff0'); sky.addColorStop(1,'#f8d8ad'); ctx.fillStyle=sky; ctx.fillRect(0,0,w,h);
+        // Soft sun and drifting clouds
+        ctx.fillStyle='#fff1b9'; ctx.beginPath(); ctx.arc(w*.77,h*.2,Math.min(w,h)*.065,0,Math.PI*2); ctx.fill();
+        clouds.forEach(drawCloud);
+        // Distant city silhouette
+        buildings.forEach((b,i) => { const y=h*.61-b.height; ctx.fillStyle=b.color; ctx.fillRect(b.x,y,b.width,b.height+30); ctx.fillStyle='#e8d4a8'; for(let wy=y+15;wy<h*.61;wy+=21) for(let wx=b.x+10;wx<b.x+b.width-5;wx+=19) if((Math.floor(wx+wy+i)%3)!==0) ctx.fillRect(wx,wy,7,9); });
+        const hy = h * .47;
+        const gy = groundY();
+        lanes.forEach(drawRoof);
+        // Obstacles: simple rooftop vents/gaps
+        obstacles.forEach(obstacle=>{const p=(obstacle.y-hy)/(gy-hy), x=laneX(obstacle.lane,obstacle.y), scale=.3+p*.95; const o = {...obstacle, y: roofY(obstacle.lane, obstacle.y)}; if (o.type === 'bar') {
+          const width = Math.min(76 * scale, w * .3);
+          const top = o.y - 48 * scale;
+          ctx.fillStyle = '#5e302c';
+          ctx.fillRect(x - width / 2, top, 5 * scale, o.y - top);
+          ctx.fillRect(x + width / 2 - 5 * scale, top, 5 * scale, o.y - top);
+          ctx.fillStyle = '#f2a84d';
+          ctx.fillRect(x - width / 2, top, width, 11 * scale);
+          ctx.fillStyle = '#783d34';
+          for (let stripe = 4 * scale; stripe < width - 5 * scale; stripe += 13 * scale) {
+            ctx.fillRect(x - width / 2 + stripe, top, 5 * scale, 11 * scale);
+          }
+        } else if(o.type==='vent'){const bw=37*scale,bh=27*scale;ctx.fillStyle='#344c58';ctx.fillRect(x-bw/2,o.y-bh,bw,bh);ctx.fillStyle='#92a6a2';ctx.fillRect(x-bw/2-3*scale,o.y-bh,bw+6*scale,6*scale);ctx.fillStyle='#506a71';ctx.fillRect(x-bw/2+5*scale,o.y-bh+8*scale,5*scale,11*scale);}else{ctx.fillStyle='#263b48';ctx.beginPath();ctx.ellipse(x,o.y,24*scale,8*scale,0,0,Math.PI*2);ctx.fill();ctx.strokeStyle='#c28b60';ctx.lineWidth=3*scale;ctx.stroke();}});
+        for (const item of pickups) {
+          const depth = (item.y - hy) / (gy - hy);
+          const radius = (item.type === 'coin' ? 10 : 15) * (.32 + depth * .85);
+          const x = laneX(item.lane, item.y);
+          const y = roofY(item.lane, item.y) - radius * 1.4;
+          const power = powers[item.type];
+          ctx.beginPath();
+          ctx.arc(x, y, radius, 0, Math.PI * 2);
+          ctx.fillStyle = power?.color ?? '#ffd35d';
+          ctx.fill();
+          ctx.strokeStyle = power ? '#ffffff' : '#a86520';
+          ctx.lineWidth = 2;
+          ctx.stroke();
+          ctx.fillStyle = '#31233a';
+          ctx.font = `bold ${radius * 1.1}px system-ui`;
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(power?.icon ?? '$', x, y);
+        }
+        // Runner shadow and character
+        if(player){const px=laneX(player.xLane,gy), lift=player.jump, shadowY=roofY(player.lane, gy), base=gy-player.elevation; const sz=Math.min(w,h)*.09;
+          ctx.fillStyle='#263d49';ctx.globalAlpha=.2;ctx.beginPath();ctx.ellipse(laneX(player.lane, gy),shadowY-2,sz*.33*Math.max(.35,1-lift/180),sz*.11,0,0,Math.PI*2);ctx.fill();ctx.globalAlpha=1;
+          const slide=isCrouching(), bob=lift?0:Math.sin(player.run*12)*3;
+          ctx.save();ctx.translate(px,base+bob-sz*(slide?.11:.25)); if(slide)ctx.rotate(-.13);
+          // legs
+          ctx.strokeStyle='#263d56';ctx.lineWidth=sz*.15;ctx.lineCap='round';ctx.beginPath(); if(slide){ctx.moveTo(-sz*.06,-sz*.1);ctx.lineTo(sz*.36,sz*.05);ctx.moveTo(-sz*.06,-sz*.1);ctx.lineTo(sz*.18,sz*.13);}else{const stride = Math.sin(player.run * 16);
+            for (const side of [-1, 1]) {
+              const swing = lift ? side * .12 : stride * side * .23;
+              const footY = sz * (.25 - (lift ? .14 : Math.max(0, -stride * side) * .15));
+              ctx.moveTo(side * sz * .095, -sz * .08);
+              ctx.lineTo(sz * (side * .1 + swing * .48), sz * .09);
+              ctx.lineTo(sz * (side * .13 + swing), footY);
+            }}ctx.stroke();
+          // torso, arms, head
+          ctx.fillStyle='#f36f55'; if(slide){ctx.beginPath();ctx.roundRect(-sz*.28,-sz*.2,sz*.6,sz*.23,sz*.12);ctx.fill();}else{ctx.beginPath();ctx.roundRect(-sz*.2,-sz*.55,sz*.4,sz*.51,sz*.12);ctx.fill();ctx.strokeStyle='#f5c08e';ctx.lineWidth=sz*.1;ctx.beginPath();ctx.moveTo(-sz*.15,-sz*.4);ctx.lineTo(-sz*.32,-sz*.18);ctx.moveTo(sz*.15,-sz*.4);ctx.lineTo(sz*.3,-sz*.58);ctx.stroke();}
+          ctx.fillStyle='#efbc87';ctx.beginPath();ctx.arc(slide?sz*.17:-sz*.02,slide?-sz*.19:-sz*.67,sz*.18,0,Math.PI*2);ctx.fill();ctx.fillStyle='#283d59';ctx.beginPath();ctx.arc(slide?sz*.17:-sz*.02,slide?-sz*.25:-sz*.72,sz*.185,Math.PI,Math.PI*2);ctx.fill();ctx.restore();
+        }
+      }
+      function endGame(obstacle) {
+        crashObstacle = obstacle;
+        crouchHeld = false;
+        state = 'over';
+        shopButton.hidden = true;
+        overlay.classList.remove('hidden');
+        titleEl.innerHTML = 'Run<br>over';
+        messageEl.textContent = `Distance: ${Math.floor(distance)} m · Points: ${Math.floor(points)} · Coins: ${coins}`;
+        startBtn.textContent = 'New run';
+        continueBtn.textContent = `Continue · ${extraLifeCost} coins`;
+        continueBtn.disabled = coins < extraLifeCost;
+        continueBtn.classList.remove('hidden');
+        homeBtn.classList.remove('hidden');
+      }
+      function addPickup(type) {
+        const safeLanes = lanes.filter(lane => !obstacles.some(
+          obstacle => obstacle.lane === lane && obstacle.y < h * .47 + 48
+        ));
+        if (!safeLanes.length) return;
+        const lane = safeLanes[Math.floor(Math.random() * safeLanes.length)];
+        pickups.push({ type, lane, y: h * .47 });
+      }
+
+      function loop(now) {
+        if (state !== 'playing') return;
+        const dt = Math.min((now - last) / 1000, .04);
+        last = now;
+        const multiplier = hasPower('double') ? 2 : 1;
+        const travel = speed * dt * (hasPower('slow') ? .58 : 1);
+        const oldFloor = roofHeight(player.lane);
+        time += dt;
+        const floor = roofHeight(player.lane);
+        if (player.elevation === oldFloor && !player.jumpV) player.elevation = floor;
+        distance += travel / 12;
+        points += travel / 12 * multiplier;
+        speed = Math.min(470, 270 + distance * .22);
+        player.run += dt;
+        player.xLane += (player.lane - player.xLane) * Math.min(1, dt * 12);
+        if (player.jumpV || player.elevation > floor) {
+          player.elevation += player.jumpV * dt;
+          player.jumpV -= 1450 * dt;
+        }
+        if (player.elevation <= floor) {
+          player.elevation = floor;
+          player.jumpV = 0;
+        }
+        player.jump = player.elevation - floor;
+        if (player.slide > 0) player.slide -= dt;
+
+        const courseStep = travel / 270;
+        spawnIn -= courseStep;
+        coinIn -= courseStep;
+        powerIn -= courseStep;
+        if (spawnIn <= 0) {
+          spawnObstacle();
+          spawnIn = Math.max(.68, 1.35 - distance / 1400) + Math.random() * .45;
+        }
+        if (powerIn <= 0) {
+          const keys = Object.keys(powers);
+          addPickup(keys[Math.floor(Math.random() * keys.length)]);
+          powerIn = 8 + Math.random() * 3;
+          coinIn = Math.max(coinIn, .28);
+        }
+        if (coinIn <= 0) {
+          addPickup('coin');
+          coinIn = .32 + Math.random() * .24;
+        }
+
+        const ground = groundY();
+        pickups = pickups.filter(item => {
+          const previousY = item.y;
+          item.y += travel;
+          const nearby = Math.abs(player.xLane - item.lane) < .34 && player.jump < 46;
+          const magnet = item.type === 'coin' && hasPower('magnet');
+          if (previousY <= ground + 12 && item.y >= ground - 16 && (nearby || magnet)) {
+            if (item.type === 'coin') {
+              coins++;
+              points += 10 * multiplier;
+              updateWallet();
+            } else {
+              activate(item.type);
+            }
+            return false;
+          }
+          return item.y < h * .87;
+        });
+
+        obstacles = obstacles.filter(obstacle => {
+          const previousY = obstacle.y;
+          obstacle.y += travel;
+          const hit = previousY < ground + 9 && obstacle.y > ground - 17 &&
+            Math.abs(player.xLane - obstacle.lane) < .32 &&
+            (obstacle.type === 'bar'
+              ? !isCrouching()
+              : player.jump <= (obstacle.type === 'vent' ? 34 : 40));
+          if (hit && state === 'playing') {
+            if (hasPower('shield')) {
+              delete active.shield;
+              return false;
+            }
+            endGame(obstacle);
+          }
+          return obstacle === crashObstacle || obstacle.y < h * .88;
+        });
+
+        scoreEl.textContent = String(Math.floor(points)).padStart(5, '0');
+        const label = Object.keys(powers).filter(hasPower).map(key =>
+          powers[key].name + (key === 'shield' ? '' : ` ${Math.ceil(active[key] - time)}s`)
+        ).join(' · ');
+        if (effects.textContent !== label) effects.textContent = label;
+        clouds.forEach(cloud => {
+          cloud.x -= travel * .055;
+          if (cloud.x < -100) cloud.x = w + 100;
+        });
+        draw();
+        if (state === 'playing') frame = requestAnimationFrame(loop);
+      }
+      shopButton.hidden = true;
+      resize();addEventListener('resize',resize);
+    })();
+  </script>
+</body>
+</html>
